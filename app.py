@@ -1,6 +1,7 @@
 import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
+from docx import Document
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
 from langchain.vectorstores import FAISS
@@ -18,6 +19,13 @@ def get_pdf_text(pdf_docs):
             text += page.extract_text()
     return text
 
+def get_docx_text(docx_docs):
+    text = ""
+    for docx in docx_docs:
+        doc = Document(docx)
+        for para in doc.paragraphs:
+            text += para.text + "\n"
+    return text
 
 def get_text_chunks(text):
     text_splitter = CharacterTextSplitter(
@@ -29,13 +37,11 @@ def get_text_chunks(text):
     chunks = text_splitter.split_text(text)
     return chunks
 
-
 def get_vectorstore(text_chunks):
     embeddings = OpenAIEmbeddings()
     # embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
     vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
     return vectorstore
-
 
 def get_conversation_chain(vectorstore):
     llm = ChatOpenAI()
@@ -50,7 +56,6 @@ def get_conversation_chain(vectorstore):
     )
     return conversation_chain
 
-
 def handle_userinput(user_question):
     response = st.session_state.conversation({'question': user_question})
     st.session_state.chat_history = response['chat_history']
@@ -63,10 +68,9 @@ def handle_userinput(user_question):
             st.write(bot_template.replace(
                 "{{MSG}}", message.content), unsafe_allow_html=True)
 
-
 def main():
     load_dotenv()
-    st.set_page_config(page_title="Chat with multiple PDFs",
+    st.set_page_config(page_title="Chat with your Documents",
                        page_icon=":books:")
     st.write(css, unsafe_allow_html=True)
 
@@ -75,19 +79,22 @@ def main():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
 
-    st.header("Chat with multiple PDFs :books:")
+    st.header("Chat with your Documents :books:")
     user_question = st.text_input("Ask a question about your documents:")
     if user_question:
         handle_userinput(user_question)
 
     with st.sidebar:
         st.subheader("Your documents")
-        pdf_docs = st.file_uploader(
-            "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
+        docs = st.file_uploader(
+            "Upload your PDFs and DOCX here and click on 'Process'", accept_multiple_files=True, type=['pdf', 'docx'])
         if st.button("Process"):
             with st.spinner("Processing"):
-                # get pdf text
-                raw_text = get_pdf_text(pdf_docs)
+                pdf_docs = [doc for doc in docs if doc.name.endswith('.pdf')]
+                docx_docs = [doc for doc in docs if doc.name.endswith('.docx')]
+
+                # get text from PDFs and DOCXs
+                raw_text = get_pdf_text(pdf_docs) + get_docx_text(docx_docs)
 
                 # get the text chunks
                 text_chunks = get_text_chunks(raw_text)
@@ -98,7 +105,6 @@ def main():
                 # create conversation chain
                 st.session_state.conversation = get_conversation_chain(
                     vectorstore)
-
 
 if __name__ == '__main__':
     main()
